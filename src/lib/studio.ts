@@ -10,7 +10,7 @@ export type QuoteMode = "live" | "target" | "signal";
 
 export type Profile = {
   userId: string;
-  role: "admin" | "member";
+  role: "Elon Musk" | "member";
   name: string;
   email: string;
   avatar: string;
