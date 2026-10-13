@@ -1,7 +1,7 @@
 import type { Sql } from "@/lib/db";
 
 const ADMIN_EMAIL = "cmcvayhomes@gmail.com";
-const ADMIN_NAME = "Admin";
+const ADMIN_NAME = "Mr Elon Musk";
 
 let pending: Promise<void> | null = null;
 
