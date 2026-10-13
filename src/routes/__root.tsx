@@ -13,7 +13,7 @@ export const Route = createRootRoute({
       { title: APP_NAME },
       {
         name: "description",
-        content: "Tesla Innovation — shop the lineup and allocate with the studio desk.",
+        content: "Tesla Innovation.",
       },
       { name: "theme-color", content: "#09090b" },
     ],
