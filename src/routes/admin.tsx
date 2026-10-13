@@ -104,7 +104,7 @@ function Lineup({
   run: (data: AdminAct) => Promise<boolean>;
 }) {
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-4">
       {board.vehicles.map((vehicle) => (
         <li key={vehicle.id} className="rounded-2xl border border-line bg-surface p-4">
           <div className="flex gap-3">
@@ -115,34 +115,59 @@ function Lineup({
             </div>
           </div>
           <form
-            className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+            className="mt-3 space-y-2"
             onSubmit={(event) => {
               event.preventDefault();
               const fd = new FormData(event.currentTarget);
               const dollars = Number(fd.get("dollars"));
-              const status = String(fd.get("status"));
+              const range = fd.get("rangeMi");
+              const rangeMi = range === "" || range == null ? null : Number(range);
               if (!Number.isInteger(dollars)) return;
-              void run({ type: "model", id: vehicle.id, anchorCents: dollars * 100, status });
+              void run({
+                type: "model",
+                id: vehicle.id,
+                name: String(fd.get("name") ?? ""),
+                tagline: String(fd.get("tagline") ?? ""),
+                kind: String(fd.get("kind") ?? ""),
+                image: String(fd.get("image") ?? ""),
+                anchorCents: dollars * 100,
+                rangeMi: Number.isInteger(rangeMi) ? rangeMi : null,
+                zeroToSixty: String(fd.get("zeroToSixty") ?? ""),
+                drive: String(fd.get("drive") ?? ""),
+                status: String(fd.get("status") ?? ""),
+                quoteMode: (String(fd.get("quoteMode") ?? "live") === "target" || String(fd.get("quoteMode") ?? "live") === "signal"
+                  ? String(fd.get("quoteMode"))
+                  : "live") as "live" | "target" | "signal",
+                blurb: String(fd.get("blurb") ?? ""),
+                sortOrder: Number(fd.get("sortOrder") ?? vehicle.sortOrder),
+              });
             }}
           >
-            <input
-              name="dollars"
-              type="number"
-              defaultValue={Math.round(vehicle.anchorCents / 100)}
-              className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
-            />
-            <select
-              name="status"
-              defaultValue={vehicle.status}
-              className="min-h-11 rounded-xl border border-line bg-surface-2 px-3"
-            >
-              <option value="available">In production</option>
-              <option value="limited">Limited</option>
-              <option value="coming">Coming</option>
-              <option value="closed">Closed</option>
-            </select>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input name="name" defaultValue={vehicle.name} placeholder="Name" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <input name="tagline" defaultValue={vehicle.tagline} placeholder="Tagline" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <input name="kind" defaultValue={vehicle.kind} placeholder="Kind" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <input name="image" defaultValue={vehicle.image} placeholder="Image path" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <input name="dollars" type="number" defaultValue={Math.round(vehicle.anchorCents / 100)} placeholder="Anchor $" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums" />
+              <input name="rangeMi" type="number" defaultValue={vehicle.rangeMi ?? ""} placeholder="Range (mi)" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums" />
+              <input name="zeroToSixty" defaultValue={vehicle.zeroToSixty} placeholder="0-60" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <input name="drive" defaultValue={vehicle.drive} placeholder="Drive" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <select name="status" defaultValue={vehicle.status} className="min-h-11 rounded-xl border border-line bg-surface-2 px-3">
+                <option value="available">In production</option>
+                <option value="limited">Limited</option>
+                <option value="coming">Coming</option>
+                <option value="closed">Closed</option>
+              </select>
+              <select name="quoteMode" defaultValue={vehicle.quoteMode} className="min-h-11 rounded-xl border border-line bg-surface-2 px-3">
+                <option value="live">Price</option>
+                <option value="target">Target</option>
+                <option value="signal">Signal</option>
+              </select>
+              <input name="sortOrder" type="number" defaultValue={vehicle.sortOrder} placeholder="Sort" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums" />
+            </div>
+            <textarea name="blurb" defaultValue={vehicle.blurb} rows={3} placeholder="Blurb" className="w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm" />
             <button className={primaryBtn} disabled={busy} type="submit">
-              Save
+              Save vehicle
             </button>
           </form>
         </li>
@@ -161,7 +186,7 @@ function Plans({
   run: (data: AdminAct) => Promise<boolean>;
 }) {
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-4">
       {board.plans.map((plan) => (
         <li key={plan.id} className="rounded-2xl border border-line bg-surface p-4">
           <h2 className="font-medium">{plan.name}</h2>
@@ -177,31 +202,26 @@ function Plans({
               void run({
                 type: "plan",
                 id: plan.id,
+                name: String(fd.get("name") ?? ""),
+                horizonMonths: Number(fd.get("horizonMonths") ?? plan.horizonMonths),
                 minCents: min * 100,
                 aprBps: Math.round(apr * 100),
+                risk: String(fd.get("risk") ?? ""),
+                summary: String(fd.get("summary") ?? ""),
                 active: fd.get("active") === "on",
+                sortOrder: Number(fd.get("sortOrder") ?? plan.sortOrder),
               });
             }}
           >
-            <label className="block text-xs text-muted">
-              Minimum dollars
-              <input
-                name="min"
-                type="number"
-                defaultValue={plan.minCents / 100}
-                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
-              />
-            </label>
-            <label className="block text-xs text-muted">
-              Illustrative pace, percent
-              <input
-                name="apr"
-                type="number"
-                step="0.1"
-                defaultValue={(plan.aprBps / 100).toFixed(1)}
-                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
-              />
-            </label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <input name="name" defaultValue={plan.name} placeholder="Name" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <input name="risk" defaultValue={plan.risk} placeholder="Risk" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3" />
+              <input name="horizonMonths" type="number" defaultValue={plan.horizonMonths} placeholder="Horizon (months)" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums" />
+              <input name="sortOrder" type="number" defaultValue={plan.sortOrder} placeholder="Sort" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums" />
+              <input name="min" type="number" defaultValue={plan.minCents / 100} placeholder="Min $" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums" />
+              <input name="apr" type="number" step="0.1" defaultValue={(plan.aprBps / 100).toFixed(1)} placeholder="APR %" className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums" />
+            </div>
+            <textarea name="summary" defaultValue={plan.summary} rows={2} placeholder="Summary" className="w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm" />
             <label className="flex min-h-11 items-center gap-2 text-sm">
               <input name="active" type="checkbox" defaultChecked={plan.active} />
               Open for new allocations

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { ImagePlus, X } from "lucide-react";
 import { Avatar, Guard, Note, primaryBtn } from "@/components/bits";
+import { prepareChatImage } from "@/lib/chat-image";
 import { useStudio } from "@/components/shell";
 import { useLoad } from "@/components/use-load";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -27,6 +29,8 @@ function MessagesPage() {
   const thread = useLoad(myMessages, "thread", 4000);
   const face = useLoad(studioFace, "face");
   const [body, setBody] = useState("");
+  const [image, setImage] = useState("");
+  const [preview, setPreview] = useState("");
   const [seeded, setSeeded] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,14 +50,31 @@ function MessagesPage() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [thread.data?.length]);
 
-  async function send() {
-    const text = body.trim();
-    if (!text) return;
+  async function onPhoto(file: File | undefined) {
+    if (!file) return;
     setBusy(true);
     setNote(null);
     try {
-      await sendMessage({ data: text });
+      const prepared = await prepareChatImage(file);
+      setImage(prepared);
+      setPreview(prepared);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not read the photo");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function send() {
+    const text = body.trim();
+    if (!text && !image.trim()) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await sendMessage({ data: { body: text || "(image)", image: image || null } });
       setBody("");
+      setImage("");
+      setPreview("");
       thread.refresh();
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Could not send");
@@ -97,7 +118,16 @@ function MessagesPage() {
                 }
               >
                 <p className="text-xs opacity-70">{mine ? "You" : "Admin"}</p>
-                <p className="mt-1 whitespace-pre-wrap leading-relaxed">{message.body}</p>
+                {message.image ? (
+                  <img
+                    src={message.image}
+                    alt=""
+                    className="mt-2 max-h-64 max-w-full rounded-lg object-contain"
+                  />
+                ) : null}
+                {message.body && message.body !== "(image)" ? (
+                  <p className="mt-1 whitespace-pre-wrap leading-relaxed">{message.body}</p>
+                ) : null}
                 <p className="mt-2 text-xs opacity-70">{whenLabel(message.createdAt)}</p>
               </div>
             </li>
@@ -114,22 +144,57 @@ function MessagesPage() {
           void send();
         }}
       >
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
-          <label className="sr-only" htmlFor="note">
-            Message admin
-          </label>
-          <textarea
-            id="note"
-            value={body}
-            rows={2}
-            maxLength={2000}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder="Message the studio"
-            className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2"
-          />
-          <button type="submit" className={primaryBtn} disabled={busy || body.trim().length === 0}>
-            Send
-          </button>
+        <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          {preview ? (
+            <div className="relative w-fit">
+              <img src={preview} alt="" className="h-20 rounded-lg object-cover" />
+              <button
+                type="button"
+                className="absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-bg text-fg"
+                onClick={() => {
+                  setImage("");
+                  setPreview("");
+                }}
+                aria-label="Remove photo"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          ) : null}
+          <div className="flex items-end gap-2">
+            <label className="tap flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-line bg-surface-2">
+              <ImagePlus className="size-5" />
+              <span className="sr-only">Add photo</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(event) => {
+                  void onPhoto(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+            <label className="sr-only" htmlFor="note">
+              Message admin
+            </label>
+            <textarea
+              id="note"
+              value={body}
+              rows={2}
+              maxLength={2000}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Message the studio"
+              className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2 text-base"
+            />
+            <button
+              type="submit"
+              className={primaryBtn}
+              disabled={busy || (body.trim().length === 0 && !image)}
+            >
+              Send
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -141,6 +206,8 @@ function AdminInbox() {
   const board = useLoad(adminBoard, "inbox-desk", 4000);
   const [openId, setOpenId] = useState<string | null>(null);
   const [body, setBody] = useState("");
+  const [image, setImage] = useState("");
+  const [preview, setPreview] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
@@ -174,15 +241,34 @@ function AdminInbox() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, openId]);
 
-  async function send() {
-    if (!open) return;
-    const text = body.trim();
-    if (!text) return;
+  async function onPhoto(file: File | undefined) {
+    if (!file) return;
     setBusy(true);
     setNote(null);
     try {
-      await adminAct({ data: { type: "reply", userId: open.userId, body: text } });
+      const prepared = await prepareChatImage(file);
+      setImage(prepared);
+      setPreview(prepared);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not read the photo");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function send() {
+    if (!open) return;
+    const text = body.trim();
+    if (!text && !image.trim()) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminAct({
+        data: { type: "reply", userId: open.userId, body: text || "(image)", image: image.trim() || null },
+      });
       setBody("");
+      setImage("");
+      setPreview("");
       board.refresh();
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Could not send");
@@ -259,7 +345,16 @@ function AdminInbox() {
                 }
               >
                 <p className="text-xs opacity-70">{mine ? "You" : open.name}</p>
-                <p className="mt-1 whitespace-pre-wrap leading-relaxed">{message.body}</p>
+                {message.image ? (
+                  <img
+                    src={message.image}
+                    alt=""
+                    className="mt-2 max-h-64 max-w-full rounded-lg object-contain"
+                  />
+                ) : null}
+                {message.body && message.body !== "(image)" ? (
+                  <p className="mt-1 whitespace-pre-wrap leading-relaxed">{message.body}</p>
+                ) : null}
                 <p className="mt-2 text-xs opacity-70">{whenLabel(message.createdAt)}</p>
               </div>
             </li>
@@ -275,22 +370,57 @@ function AdminInbox() {
           void send();
         }}
       >
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
-          <label className="sr-only" htmlFor="reply">
-            Reply
-          </label>
-          <textarea
-            id="reply"
-            value={body}
-            rows={2}
-            maxLength={2000}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder={`Reply to ${open.name}`}
-            className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2"
-          />
-          <button type="submit" className={primaryBtn} disabled={busy || body.trim().length === 0}>
-            Send
-          </button>
+        <div className="mx-auto flex max-w-3xl flex-col gap-2">
+          {preview ? (
+            <div className="relative w-fit">
+              <img src={preview} alt="" className="h-20 rounded-lg object-cover" />
+              <button
+                type="button"
+                className="absolute -top-2 -right-2 flex size-7 items-center justify-center rounded-full bg-bg text-fg"
+                onClick={() => {
+                  setImage("");
+                  setPreview("");
+                }}
+                aria-label="Remove photo"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          ) : null}
+          <div className="flex items-end gap-2">
+            <label className="tap flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-line bg-surface-2">
+              <ImagePlus className="size-5" />
+              <span className="sr-only">Add photo</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(event) => {
+                  void onPhoto(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+            <label className="sr-only" htmlFor="reply">
+              Reply
+            </label>
+            <textarea
+              id="reply"
+              value={body}
+              rows={2}
+              maxLength={2000}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder={`Reply to ${open.name}`}
+              className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2 text-base"
+            />
+            <button
+              type="submit"
+              className={primaryBtn}
+              disabled={busy || (body.trim().length === 0 && !image)}
+            >
+              Send
+            </button>
+          </div>
         </div>
       </form>
     </div>

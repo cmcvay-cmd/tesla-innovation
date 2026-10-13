@@ -29,6 +29,7 @@ export type Vehicle = {
   status: string;
   quoteMode: QuoteMode;
   blurb: string;
+  sortOrder: number;
 };
 
 export type Plan = {
@@ -40,6 +41,7 @@ export type Plan = {
   risk: string;
   summary: string;
   active: boolean;
+  sortOrder: number;
 };
 
 export type Reservation = {
@@ -79,6 +81,7 @@ export type ChatMessage = {
   userId: string;
   senderId: string;
   body: string;
+  image: string | null;
   createdAt: string;
   senderAvatar: string;
 };
@@ -148,6 +151,7 @@ type VehicleRow = {
   status: string;
   quoteMode: string;
   blurb: string;
+  sortOrder: number;
 };
 
 function mapVehicle(row: VehicleRow): Vehicle {
@@ -164,6 +168,7 @@ function mapVehicle(row: VehicleRow): Vehicle {
     status: row.status,
     quoteMode: asMode(row.quoteMode),
     blurb: row.blurb,
+    sortOrder: num(row.sortOrder),
   };
 }
 
@@ -174,7 +179,8 @@ const vehicleSelect = `
   zero_to_sixty as "zeroToSixty",
   drive, status,
   quote_mode as "quoteMode",
-  blurb
+  blurb,
+  sort_order as "sortOrder"
 `;
 
 async function db() {
@@ -224,9 +230,10 @@ export const listPlans = createServerFn({ method: "GET" }).handler(async () => {
     risk: string;
     summary: string;
     active: boolean;
+    sortOrder: number;
   }>`
     select id, name, horizon_months as "horizonMonths", min_cents as "minCents",
-           apr_bps as "aprBps", risk, summary, active
+           apr_bps as "aprBps", risk, summary, active, sort_order as "sortOrder"
     from plans
     where active = true
     order by sort_order
@@ -237,6 +244,7 @@ export const listPlans = createServerFn({ method: "GET" }).handler(async () => {
     minCents: num(row.minCents),
     aprBps: num(row.aprBps),
     active: flag(row.active),
+    sortOrder: num(row.sortOrder),
   })) satisfies Plan[];
 });
 
@@ -328,15 +336,19 @@ export const myMessages = createServerFn({ method: "GET" })
 
 export const sendMessage = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator((body: string) => cleanBody(body))
-  .handler(async ({ context, data: body }) => {
+  .validator((input: { body: string; image?: string | null }) => {
+    const body = cleanBody(input.body);
+    const image = cleanImage(input.image);
+    return { body, image };
+  })
+  .handler(async ({ context, data }) => {
     const sql = await db();
     if ((await roleOf(sql, context.userId)) === "admin") {
       throw new Error("Reply from the studio desk");
     }
     await sql`
-      insert into messages (user_id, sender_id, body)
-      values (${context.userId}, ${context.userId}, ${body})
+      insert into messages (user_id, sender_id, body, image)
+      values (${context.userId}, ${context.userId}, ${data.body}, ${data.image})
     `;
     return { ok: true };
   });
@@ -572,9 +584,10 @@ export const adminBoard = createServerFn({ method: "GET" })
       risk: string;
       summary: string;
       active: boolean;
+      sortOrder: number;
     }>`
       select id, name, horizon_months as "horizonMonths", min_cents as "minCents",
-             apr_bps as "aprBps", risk, summary, active
+             apr_bps as "aprBps", risk, summary, active, sort_order as "sortOrder"
       from plans order by sort_order
     `;
     const plans: Plan[] = planRows.map((row) => ({
@@ -583,6 +596,7 @@ export const adminBoard = createServerFn({ method: "GET" })
       minCents: num(row.minCents),
       aprBps: num(row.aprBps),
       active: flag(row.active),
+      sortOrder: num(row.sortOrder),
     }));
     const reservations = await reservationQuery(sql, null);
     const investments = await investmentQuery(sql, null);
@@ -603,6 +617,7 @@ export const adminBoard = createServerFn({ method: "GET" })
     `;
     const messages = await sql.query<ChatMessage>(
       `select m.id, m.user_id as "userId", m.sender_id as "senderId", m.body,
+              m.image,
               to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
               coalesce(p.avatar, '') as "senderAvatar"
        from messages m
@@ -626,19 +641,46 @@ export const adminBoard = createServerFn({ method: "GET" })
       messages: messages.reverse().map((message) => ({
         ...message,
         id: num(message.id),
+        image: message.image || null,
         senderAvatar: message.senderAvatar ?? "",
       })),
     };
   });
 
 export type AdminAct =
-  | { type: "model"; id: string; anchorCents: number; status: string }
-  | { type: "plan"; id: string; minCents: number; aprBps: number; active: boolean }
+  | {
+      type: "model";
+      id: string;
+      name: string;
+      tagline: string;
+      kind: string;
+      image: string;
+      anchorCents: number;
+      rangeMi: number | null;
+      zeroToSixty: string;
+      drive: string;
+      status: string;
+      quoteMode: QuoteMode;
+      blurb: string;
+      sortOrder: number;
+    }
+  | {
+      type: "plan";
+      id: string;
+      name: string;
+      horizonMonths: number;
+      minCents: number;
+      aprBps: number;
+      risk: string;
+      summary: string;
+      active: boolean;
+      sortOrder: number;
+    }
   | { type: "investment"; id: number; status: string }
   | { type: "stake"; id: number; status: string }
   | { type: "reservation"; id: number; status: string }
   | { type: "role"; userId: string; role: "admin" | "member" }
-  | { type: "reply"; userId: string; body: string };
+  | { type: "reply"; userId: string; body: string; image?: string | null };
 
 export const adminAct = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
@@ -649,13 +691,31 @@ export const adminAct = createServerFn({ method: "POST" })
     if (data.type === "model") {
       await sql`
         update models
-        set anchor_cents = ${data.anchorCents}, status = ${data.status}
+        set name = ${data.name},
+            tagline = ${data.tagline},
+            kind = ${data.kind},
+            image = ${data.image},
+            anchor_cents = ${data.anchorCents},
+            range_mi = ${data.rangeMi},
+            zero_to_sixty = ${data.zeroToSixty},
+            drive = ${data.drive},
+            status = ${data.status},
+            quote_mode = ${data.quoteMode},
+            blurb = ${data.blurb},
+            sort_order = ${data.sortOrder}
         where id = ${data.id}
       `;
     } else if (data.type === "plan") {
       await sql`
         update plans
-        set min_cents = ${data.minCents}, apr_bps = ${data.aprBps}, active = ${data.active}
+        set name = ${data.name},
+            horizon_months = ${data.horizonMonths},
+            min_cents = ${data.minCents},
+            apr_bps = ${data.aprBps},
+            risk = ${data.risk},
+            summary = ${data.summary},
+            active = ${data.active},
+            sort_order = ${data.sortOrder}
         where id = ${data.id}
       `;
     } else if (data.type === "investment") {
@@ -693,8 +753,8 @@ export const adminAct = createServerFn({ method: "POST" })
       const users = await sql<{ id: string }>`select id from "user" where id = ${data.userId}`;
       if (!users[0]) throw new Error("Unknown member");
       await sql`
-        insert into messages (user_id, sender_id, body)
-        values (${data.userId}, ${context.userId}, ${data.body})
+        insert into messages (user_id, sender_id, body, image)
+        values (${data.userId}, ${context.userId}, ${data.body}, ${data.image ?? null})
       `;
     }
     return { ok: true };
@@ -705,6 +765,22 @@ function cleanBody(body: unknown) {
   const text = body.trim();
   if (text.length < 1 || text.length > 2000) throw new Error("Message must be 1 to 2000 characters");
   return text;
+}
+
+function cleanImage(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (typeof value !== "string") throw new Error("Invalid image");
+  const text = value.trim();
+  if (text.length === 0) return null;
+  if (text.length > 180_000) throw new Error("Image is too large");
+  if (
+    text.startsWith("https://") ||
+    text.startsWith("http://") ||
+    text.startsWith("data:image/")
+  ) {
+    return text;
+  }
+  throw new Error("Image must be a URL or data URL");
 }
 
 function clip(value: unknown, label: string, min: number, max: number) {
@@ -757,7 +833,23 @@ function parseAct(input: AdminAct): AdminAct {
       throw new Error("Anchor must be between $1,000 and $1,000,000");
     }
     if (!MODEL_STATUS.has(input.status)) throw new Error("Unknown status");
-    return input;
+    if (!["live", "target", "signal"].includes(input.quoteMode)) throw new Error("Unknown quote mode");
+    if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0 || input.sortOrder > 100) {
+      throw new Error("Sort order out of range");
+    }
+    return {
+      ...input,
+      name: clip(input.name, "Name required", 1, 80),
+      tagline: clip(input.tagline, "Tagline required", 1, 120),
+      kind: clip(input.kind, "Kind required", 1, 40),
+      image: clip(input.image, "Image path required", 1, 200),
+      zeroToSixty: typeof input.zeroToSixty === "string" ? input.zeroToSixty.trim().slice(0, 20) : "",
+      drive: clip(input.drive, "Drive required", 1, 60),
+      blurb: clip(input.blurb, "Blurb required", 1, 1000),
+      rangeMi: input.rangeMi == null || (Number.isInteger(input.rangeMi) && input.rangeMi >= 0 && input.rangeMi <= 1000)
+        ? input.rangeMi
+        : null,
+    };
   }
   if (input.type === "plan") {
     if (!/^[a-z0-9-]{2,40}$/.test(input.id)) throw new Error("Unknown plan");
@@ -767,8 +859,19 @@ function parseAct(input: AdminAct): AdminAct {
     if (!Number.isInteger(input.aprBps) || input.aprBps < 0 || input.aprBps > 5000) {
       throw new Error("Pace must be between 0 and 50 percent");
     }
+    if (!Number.isInteger(input.horizonMonths) || input.horizonMonths < 1 || input.horizonMonths > 120) {
+      throw new Error("Horizon out of range");
+    }
+    if (!Number.isInteger(input.sortOrder) || input.sortOrder < 0 || input.sortOrder > 100) {
+      throw new Error("Sort order out of range");
+    }
     if (typeof input.active !== "boolean") throw new Error("Invalid plan");
-    return input;
+    return {
+      ...input,
+      name: clip(input.name, "Name required", 1, 80),
+      risk: clip(input.risk, "Risk required", 1, 40),
+      summary: clip(input.summary, "Summary required", 1, 500),
+    };
   }
   if (input.type === "investment" || input.type === "stake") {
     if (!Number.isInteger(input.id)) throw new Error("Unknown allocation");
@@ -791,7 +894,12 @@ function parseAct(input: AdminAct): AdminAct {
     if (typeof input.userId !== "string" || input.userId.length < 1 || input.userId.length > 80) {
       throw new Error("Unknown member");
     }
-    return { type: "reply", userId: input.userId, body: cleanBody(input.body) };
+    return {
+      type: "reply",
+      userId: input.userId,
+      body: cleanBody(input.body),
+      image: cleanImage(input.image),
+    };
   }
   throw new Error("Invalid action");
 }
@@ -880,6 +988,7 @@ async function investmentQuery(sql: Sql, userId: string | null) {
 async function messageQuery(sql: Sql, userId: string) {
   const rows = await sql<ChatMessage>`
     select m.id, m.user_id as "userId", m.sender_id as "senderId", m.body,
+           m.image,
            to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
            coalesce(p.avatar, '') as "senderAvatar"
     from messages m
@@ -889,6 +998,11 @@ async function messageQuery(sql: Sql, userId: string) {
     limit 200
   `;
   return rows
-    .map((row) => ({ ...row, id: num(row.id), senderAvatar: row.senderAvatar ?? "" }))
+    .map((row) => ({
+      ...row,
+      id: num(row.id),
+      image: row.image || null,
+      senderAvatar: row.senderAvatar ?? "",
+    }))
     .reverse();
 }

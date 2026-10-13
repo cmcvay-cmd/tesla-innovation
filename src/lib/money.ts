@@ -6,13 +6,6 @@ export function usd(cents: number) {
   }).format(cents / 100);
 }
 
-/** Shared studio tape: a few tenths of a percent around the published anchor. */
-export function indicativeCents(anchorCents: number, at = Date.now()) {
-  const t = at / 1000;
-  const wave = Math.sin(t / 47) * 0.0024 + Math.sin(t / 11) * 0.0008;
-  return Math.max(0, Math.round(anchorCents * (1 + wave)));
-}
-
 export function projectCents(amountCents: number, aprBps: number, months: number) {
   return Math.round(amountCents * (1 + (aprBps / 10000) * (months / 12)));
 }

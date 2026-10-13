@@ -98,7 +98,7 @@ function Frame({ path, children }: { path: string; children: ReactNode }) {
   return (
     <div className="min-h-screen">
       <Header path={path} />
-      <main className="mx-auto w-full max-w-3xl px-4 pt-4 pb-32 md:pb-16">{children}</main>
+      <main className="mx-auto w-full max-w-3xl px-4 pt-4 pb-40 md:pb-20">{children}</main>
       <Dock path={path} />
     </div>
   );
@@ -185,7 +185,7 @@ function Dock({ path }: { path: string }) {
               <Link
                 to={item.to}
                 aria-current={on ? "page" : undefined}
-                className="relative flex min-h-14 flex-col items-center justify-center gap-1 text-xs"
+                className="relative flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[11px] active:opacity-70"
               >
                 {item.dot ? (
                   <span className="absolute top-2 right-[30%] size-1.5 rounded-full bg-accent" />

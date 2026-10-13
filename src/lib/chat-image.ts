@@ -64,8 +64,8 @@ function dataUrlToBlob(dataUrl: string) {
 async function uploadToSupabase(dataUrl: string) {
   if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error("Supabase is not configured");
   const blob = dataUrlToBlob(dataUrl);
-  const name = `\( {Date.now()}- \){Math.random().toString(36).slice(2, 10)}.jpg`;
-  const endpoint = `\( {SUPABASE_URL.replace(/\/ \)/, "")}/storage/v1/object/\( {BUCKET}/ \){name}`;
+  const name = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
+  const endpoint = `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/${BUCKET}/${name}`;
   const res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -80,7 +80,7 @@ async function uploadToSupabase(dataUrl: string) {
     const text = await res.text().catch(() => "");
     throw new Error(text || "Could not upload the photo");
   }
-  return `\( {SUPABASE_URL.replace(/\/ \)/, "")}/storage/v1/object/public/\( {BUCKET}/ \){name}`;
+  return `${SUPABASE_URL.replace(/\/$/, "")}/storage/v1/object/public/${BUCKET}/${name}`;
 }
 
 /** Prefer Supabase Storage; fall back to the compressed data URL so chat still works. */
