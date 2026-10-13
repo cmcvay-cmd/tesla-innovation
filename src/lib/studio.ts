@@ -418,7 +418,7 @@ export const studioFace = createServerFn({ method: "GET" })
       order by p.created_at asc
       limit 1
     `;
-    return rows[0] ?? { name: "Admin", avatar: "" };
+    return rows[0] ?? { name: "Elon Musk", avatar: "" };
   });
 
 type ShopInput = {

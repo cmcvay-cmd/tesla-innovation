@@ -92,9 +92,9 @@ function MessagesPage() {
       <div>
         <p className="kicker text-xs text-muted">PRIVATE LINE</p>
         <div className="mt-2 flex items-center gap-3">
-          <Avatar src={face.data?.avatar} name={face.data?.name || "Admin"} />
+          <Avatar src={face.data?.avatar} name={face.data?.name || "Elon Musk"} />
           <div>
-            <h1 className="text-4xl font-medium tracking-tight">Admin</h1>
+            <h1 className="text-4xl font-medium tracking-tight">Elon Musk</h1>
             <p className="text-sm text-muted">Private line. Only you and admin.</p>
           </div>
         </div>
@@ -109,7 +109,7 @@ function MessagesPage() {
           const mine = message.senderId === user?.id;
           return (
             <li key={message.id} className={mine ? "flex justify-end" : "flex items-end gap-2"}>
-              {mine ? null : <Avatar src={message.senderAvatar || face.data?.avatar} name="Admin" className="size-8" />}
+              {mine ? null : <Avatar src={message.senderAvatar || face.data?.avatar} name="Elon Musk" className="size-8" />}
               <div
                 className={
                   mine
@@ -117,7 +117,7 @@ function MessagesPage() {
                     : "max-w-[85%] rounded-2xl border border-line bg-surface px-4 py-3"
                 }
               >
-                <p className="text-xs opacity-70">{mine ? "You" : "Admin"}</p>
+                <p className="text-xs opacity-70">{mine ? "You" : "Elon Musk"}</p>
                 {message.image ? (
                   <img
                     src={message.image}
