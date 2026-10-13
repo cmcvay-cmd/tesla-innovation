@@ -26,6 +26,7 @@
     min-height: 100%;
     overflow-x: hidden;
     background: var(--color-bg);
+padding-top: env(safe-area-inset-top);
   }
   h1,
   h2,
