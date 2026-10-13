@@ -92,10 +92,10 @@ function MessagesPage() {
       <div>
         <p className="kicker text-xs text-muted">PRIVATE LINE</p>
         <div className="mt-2 flex items-center gap-3">
-          <Avatar src={face.data?.avatar} name={face.data?.name || "Admin"} />
+          <Avatar src={face.data?.avatar} name={face.data?.name || "Elon Musk"} />
           <div>
             <h1 className="text-4xl font-medium tracking-tight">Admin</h1>
-            <p className="text-sm text-muted">Private line. Only you and admin.</p>
+            <p className="text-sm text-muted">.</p>
           </div>
         </div>
       </div>
