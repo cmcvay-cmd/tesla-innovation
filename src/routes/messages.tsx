@@ -1,0 +1,298 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Avatar, Guard, Note, primaryBtn } from "@/components/bits";
+import { useStudio } from "@/components/shell";
+import { useLoad } from "@/components/use-load";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { whenLabel } from "@/lib/money";
+import { adminAct, adminBoard, myMessages, sendMessage, studioFace } from "@/lib/studio";
+
+type Search = { about: string };
+
+export const Route = createFileRoute("/messages")({
+  validateSearch: (search: Record<string, unknown>): Search => ({
+    about: typeof search.about === "string" ? search.about.slice(0, 80) : "",
+  }),
+  component: () => (
+    <Guard>
+      <MessagesPage />
+    </Guard>
+  ),
+});
+
+function MessagesPage() {
+  const { about } = Route.useSearch();
+  const { user } = useCurrentUserState();
+  const { profile, profileReady } = useStudio();
+  const thread = useLoad(myMessages, "thread", 4000);
+  const face = useLoad(studioFace, "face");
+  const [body, setBody] = useState("");
+  const [seeded, setSeeded] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (seeded || !about) return;
+    if (thread.data && thread.data.length > 0) {
+      setSeeded(true);
+      return;
+    }
+    setBody(`I am looking at the ${about}.`);
+    setSeeded(true);
+  }, [about, seeded, thread.data]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [thread.data?.length]);
+
+  async function send() {
+    const text = body.trim();
+    if (!text) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await sendMessage({ data: text });
+      setBody("");
+      thread.refresh();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not send");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!profileReady) return <div className="h-40 animate-pulse rounded-2xl bg-surface" />;
+
+  if (profile?.role === "admin") return <AdminInbox />;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="kicker text-xs text-muted">PRIVATE LINE</p>
+        <div className="mt-2 flex items-center gap-3">
+          <Avatar src={face.data?.avatar} name={face.data?.name || "Admin"} />
+          <div>
+            <h1 className="text-4xl font-medium tracking-tight">Admin</h1>
+            <p className="text-sm text-muted">Private line. Only you and admin.</p>
+          </div>
+        </div>
+      </div>
+      <ul className="space-y-3 pb-8">
+        {thread.data && thread.data.length === 0 ? (
+          <li className="rounded-2xl border border-line bg-surface p-4 text-sm text-muted">
+            The line is open. Write when you are ready.
+          </li>
+        ) : null}
+        {thread.data?.map((message) => {
+          const mine = message.senderId === user?.id;
+          return (
+            <li key={message.id} className={mine ? "flex justify-end" : "flex items-end gap-2"}>
+              {mine ? null : <Avatar src={message.senderAvatar || face.data?.avatar} name="Admin" className="size-8" />}
+              <div
+                className={
+                  mine
+                    ? "max-w-[85%] rounded-2xl bg-accent px-4 py-3 text-accent-fg"
+                    : "max-w-[85%] rounded-2xl border border-line bg-surface px-4 py-3"
+                }
+              >
+                <p className="text-xs opacity-70">{mine ? "You" : "Admin"}</p>
+                <p className="mt-1 whitespace-pre-wrap leading-relaxed">{message.body}</p>
+                <p className="mt-2 text-xs opacity-70">{whenLabel(message.createdAt)}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div ref={endRef} />
+      {note ? <Note>{note}</Note> : null}
+      {thread.error ? <Note>{thread.error}</Note> : null}
+      <form
+        className="composer fixed inset-x-0 z-30 border-t border-line bg-bg px-4 py-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <div className="mx-auto flex max-w-3xl items-end gap-2">
+          <label className="sr-only" htmlFor="note">
+            Message admin
+          </label>
+          <textarea
+            id="note"
+            value={body}
+            rows={2}
+            maxLength={2000}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="Message the studio"
+            className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2"
+          />
+          <button type="submit" className={primaryBtn} disabled={busy || body.trim().length === 0}>
+            Send
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AdminInbox() {
+  const { user } = useCurrentUserState();
+  const board = useLoad(adminBoard, "inbox-desk", 4000);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [body, setBody] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const threads = useMemo(() => {
+    const map = new Map<
+      string,
+      { userId: string; name: string; email: string; avatar: string; last: string; lastAt: string; waiting: boolean }
+    >();
+    const data = board.data;
+    if (!data) return [];
+    for (const message of data.messages) {
+      const person = data.people.find((item) => item.userId === message.userId);
+      map.set(message.userId, {
+        userId: message.userId,
+        name: person?.name ?? "Member",
+        email: person?.email ?? "",
+        avatar: person?.avatar ?? "",
+        last: message.body,
+        lastAt: message.createdAt,
+        waiting: message.senderId === message.userId,
+      });
+    }
+    return [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+  }, [board.data]);
+
+  const open = threads.find((thread) => thread.userId === openId) ?? null;
+  const messages = board.data?.messages.filter((message) => message.userId === openId) ?? [];
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length, openId]);
+
+  async function send() {
+    if (!open) return;
+    const text = body.trim();
+    if (!text) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminAct({ data: { type: "reply", userId: open.userId, body: text } });
+      setBody("");
+      board.refresh();
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not send");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (board.pending && !board.data) return <div className="h-40 animate-pulse rounded-2xl bg-surface" />;
+
+  if (!open) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <p className="kicker text-xs text-muted">INBOX</p>
+          <h1 className="mt-2 text-4xl font-medium tracking-tight">Member threads</h1>
+          <p className="mt-2 text-sm text-muted">Private chats from members. Tap one to reply.</p>
+        </div>
+        {board.error ? <Note>{board.error}</Note> : null}
+        {threads.length === 0 ? (
+          <p className="rounded-2xl border border-line bg-surface p-4 text-sm text-muted">
+            No messages yet. A member’s shop or invest note shows up here.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {threads.map((thread) => (
+              <li key={thread.userId}>
+                <button
+                  type="button"
+                  onClick={() => setOpenId(thread.userId)}
+                  className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-left"
+                >
+                  <Avatar src={thread.avatar} name={thread.name} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="font-medium">{thread.name}</span>
+                      {thread.waiting ? <span className="size-2 shrink-0 rounded-full bg-accent" /> : null}
+                    </span>
+                    <span className="mt-1 line-clamp-2 block text-sm text-muted">{thread.last}</span>
+                    <span className="mt-2 block text-xs text-muted">{whenLabel(thread.lastAt)}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <button type="button" className="min-h-11 text-sm text-muted" onClick={() => setOpenId(null)}>
+        All threads
+      </button>
+      <div className="flex items-center gap-3">
+        <Avatar src={open.avatar} name={open.name} />
+        <div>
+          <h1 className="text-2xl font-medium">{open.name}</h1>
+          <p className="break-all text-sm text-muted">{open.email}</p>
+        </div>
+      </div>
+      <ul className="space-y-3 pb-8">
+        {messages.map((message) => {
+          const mine = message.senderId === user?.id;
+          return (
+            <li key={message.id} className={mine ? "flex justify-end" : "flex items-end gap-2"}>
+              {mine ? null : <Avatar src={message.senderAvatar || open.avatar} name={open.name} className="size-8" />}
+              <div
+                className={
+                  mine
+                    ? "max-w-[85%] rounded-2xl bg-accent px-4 py-3 text-accent-fg"
+                    : "max-w-[85%] rounded-2xl border border-line bg-surface px-4 py-3"
+                }
+              >
+                <p className="text-xs opacity-70">{mine ? "You" : open.name}</p>
+                <p className="mt-1 whitespace-pre-wrap leading-relaxed">{message.body}</p>
+                <p className="mt-2 text-xs opacity-70">{whenLabel(message.createdAt)}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div ref={endRef} />
+      {note ? <Note>{note}</Note> : null}
+      <form
+        className="composer fixed inset-x-0 z-30 border-t border-line bg-bg px-4 py-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <div className="mx-auto flex max-w-3xl items-end gap-2">
+          <label className="sr-only" htmlFor="reply">
+            Reply
+          </label>
+          <textarea
+            id="reply"
+            value={body}
+            rows={2}
+            maxLength={2000}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder={`Reply to ${open.name}`}
+            className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2"
+          />
+          <button type="submit" className={primaryBtn} disabled={busy || body.trim().length === 0}>
+            Send
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

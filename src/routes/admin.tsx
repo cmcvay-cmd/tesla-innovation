@@ -1,0 +1,488 @@
+import { useMemo, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { Guard, Note, primaryBtn, ghostBtn, Skeleton, StatusPill, Avatar } from "@/components/bits";
+import { useStudio } from "@/components/shell";
+import { useLoad } from "@/components/use-load";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { usd, whenLabel } from "@/lib/money";
+import { adminAct, adminBoard, type AdminAct, type AdminBoard } from "@/lib/studio";
+
+export const Route = createFileRoute("/admin")({
+  component: () => (
+    <Guard>
+      <AdminPage />
+    </Guard>
+  ),
+});
+
+const TABS = [
+  ["lineup", "Lineup"],
+  ["plans", "Plans"],
+  ["book", "Book"],
+  ["people", "People"],
+  ["desk", "Desk"],
+] as const;
+
+type Tab = (typeof TABS)[number][0];
+
+function AdminPage() {
+  const { profile, profileReady } = useStudio();
+  const board = useLoad(adminBoard, "desk", 8000);
+  const [tab, setTab] = useState<Tab>("lineup");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function run(data: AdminAct) {
+    setBusy(true);
+    setError(null);
+    try {
+      await adminAct({ data });
+      board.refresh();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!profileReady) return <Skeleton />;
+  if (profile?.role !== "admin") {
+    return (
+      <div className="space-y-3">
+        <h1 className="text-3xl font-medium">Studio desk</h1>
+        <p className="text-muted">This desk is private.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="kicker text-xs text-muted">FULL CONTROL</p>
+        <h1 className="mt-2 text-4xl font-medium tracking-tight">Studio desk</h1>
+        <p className="mt-2 text-sm text-muted">
+          Anchors, plans, orders, people, and private replies.
+        </p>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {TABS.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            className={
+              tab === id
+                ? "tap min-h-11 shrink-0 rounded-full bg-fg px-4 text-sm text-bg"
+                : "tap min-h-11 shrink-0 rounded-full border border-line px-4 text-sm"
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {board.pending ? <Skeleton /> : null}
+      {board.error ? <Note>{board.error}</Note> : null}
+      {error ? <Note>{error}</Note> : null}
+      {board.data && tab === "lineup" ? <Lineup board={board.data} busy={busy} run={run} /> : null}
+      {board.data && tab === "plans" ? <Plans board={board.data} busy={busy} run={run} /> : null}
+      {board.data && tab === "book" ? <Book board={board.data} busy={busy} run={run} /> : null}
+      {board.data && tab === "people" ? <People board={board.data} busy={busy} run={run} /> : null}
+      {board.data && tab === "desk" ? <Desk board={board.data} busy={busy} run={run} /> : null}
+    </div>
+  );
+}
+
+function Lineup({
+  board,
+  busy,
+  run,
+}: {
+  board: AdminBoard;
+  busy: boolean;
+  run: (data: AdminAct) => Promise<boolean>;
+}) {
+  return (
+    <ul className="space-y-3">
+      {board.vehicles.map((vehicle) => (
+        <li key={vehicle.id} className="rounded-2xl border border-line bg-surface p-4">
+          <div className="flex gap-3">
+            <img src={vehicle.image} alt="" className="h-16 w-24 rounded-lg object-cover" />
+            <div>
+              <h2 className="font-medium">{vehicle.name}</h2>
+              <p className="text-sm tabular-nums text-muted">Anchor {usd(vehicle.anchorCents)}</p>
+            </div>
+          </div>
+          <form
+            className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const fd = new FormData(event.currentTarget);
+              const dollars = Number(fd.get("dollars"));
+              const status = String(fd.get("status"));
+              if (!Number.isInteger(dollars)) return;
+              void run({ type: "model", id: vehicle.id, anchorCents: dollars * 100, status });
+            }}
+          >
+            <input
+              name="dollars"
+              type="number"
+              defaultValue={Math.round(vehicle.anchorCents / 100)}
+              className="min-h-11 rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
+            />
+            <select
+              name="status"
+              defaultValue={vehicle.status}
+              className="min-h-11 rounded-xl border border-line bg-surface-2 px-3"
+            >
+              <option value="available">In production</option>
+              <option value="limited">Limited</option>
+              <option value="coming">Coming</option>
+              <option value="closed">Closed</option>
+            </select>
+            <button className={primaryBtn} disabled={busy} type="submit">
+              Save
+            </button>
+          </form>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Plans({
+  board,
+  busy,
+  run,
+}: {
+  board: AdminBoard;
+  busy: boolean;
+  run: (data: AdminAct) => Promise<boolean>;
+}) {
+  return (
+    <ul className="space-y-3">
+      {board.plans.map((plan) => (
+        <li key={plan.id} className="rounded-2xl border border-line bg-surface p-4">
+          <h2 className="font-medium">{plan.name}</h2>
+          <p className="text-sm text-muted">{plan.summary}</p>
+          <form
+            className="mt-3 space-y-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const fd = new FormData(event.currentTarget);
+              const min = Number(fd.get("min"));
+              const apr = Number(fd.get("apr"));
+              if (!Number.isInteger(min) || !Number.isFinite(apr)) return;
+              void run({
+                type: "plan",
+                id: plan.id,
+                minCents: min * 100,
+                aprBps: Math.round(apr * 100),
+                active: fd.get("active") === "on",
+              });
+            }}
+          >
+            <label className="block text-xs text-muted">
+              Minimum dollars
+              <input
+                name="min"
+                type="number"
+                defaultValue={plan.minCents / 100}
+                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
+              />
+            </label>
+            <label className="block text-xs text-muted">
+              Illustrative pace, percent
+              <input
+                name="apr"
+                type="number"
+                step="0.1"
+                defaultValue={(plan.aprBps / 100).toFixed(1)}
+                className="mt-1 min-h-11 w-full rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
+              />
+            </label>
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input name="active" type="checkbox" defaultChecked={plan.active} />
+              Open for new allocations
+            </label>
+            <button className={primaryBtn} disabled={busy} type="submit">
+              Save plan
+            </button>
+          </form>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Book({
+  board,
+  busy,
+  run,
+}: {
+  board: AdminBoard;
+  busy: boolean;
+  run: (data: AdminAct) => Promise<boolean>;
+}) {
+  return (
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium">Allocations</h2>
+        {board.investments.length === 0 ? <p className="text-sm text-muted">None yet.</p> : null}
+        <ul className="space-y-3">
+          {board.investments.map((row) => (
+            <li key={row.id} className="rounded-2xl border border-line bg-surface p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-medium">{row.planName}</h3>
+                  <p className="text-sm text-muted">{row.name} · {row.email}</p>
+                  <p className="tabular-nums">{usd(row.amountCents)}</p>
+                </div>
+                <StatusPill status={row.status} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {row.status !== "active" ? (
+                  <button type="button" className={primaryBtn} disabled={busy} onClick={() => void run({ type: "investment", id: row.id, status: "active" })}>
+                    Activate
+                  </button>
+                ) : null}
+                {row.status === "pending" ? (
+                  <button type="button" className={ghostBtn} disabled={busy} onClick={() => void run({ type: "investment", id: row.id, status: "declined" })}>
+                    Decline
+                  </button>
+                ) : null}
+                {row.status === "active" ? (
+                  <button type="button" className={ghostBtn} disabled={busy} onClick={() => void run({ type: "investment", id: row.id, status: "closed" })}>
+                    Close
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium">Model investments</h2>
+        {board.stakes.length === 0 ? <p className="text-sm text-muted">None yet.</p> : null}
+        <ul className="space-y-3">
+          {board.stakes.map((row) => (
+            <li key={row.id} className="rounded-2xl border border-line bg-surface p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-medium">{row.modelName}</h3>
+                  <p className="text-sm text-muted">{row.name} · {row.email}</p>
+                  <p className="tabular-nums">
+                    {usd(row.amountCents)} · {row.horizonMonths} mo · {(row.aprBps / 100).toFixed(1)}%
+                  </p>
+                </div>
+                <StatusPill status={row.status} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {row.status !== "active" ? (
+                  <button type="button" className={primaryBtn} disabled={busy} onClick={() => void run({ type: "stake", id: row.id, status: "active" })}>
+                    Activate
+                  </button>
+                ) : null}
+                {row.status === "pending" ? (
+                  <button type="button" className={ghostBtn} disabled={busy} onClick={() => void run({ type: "stake", id: row.id, status: "declined" })}>
+                    Decline
+                  </button>
+                ) : null}
+                {row.status === "active" ? (
+                  <button type="button" className={ghostBtn} disabled={busy} onClick={() => void run({ type: "stake", id: row.id, status: "closed" })}>
+                    Close
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium">Vehicle orders</h2>
+        {board.reservations.length === 0 ? <p className="text-sm text-muted">None yet.</p> : null}
+        <ul className="space-y-3">
+          {board.reservations.map((row) => (
+            <li key={row.id} className="rounded-2xl border border-line bg-surface p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-medium">{row.modelName}</h3>
+                  <p className="text-sm text-muted">{row.color}</p>
+                  <p className="text-sm text-muted">
+                    {row.payMethod === "finance" ? `Finance · ${row.termMonths ?? "—"} mo` : "Cash"}
+                    {row.city ? ` · ${row.city}` : ""}
+                  </p>
+                  {row.phone ? <p className="text-sm text-muted">{row.buyerName || row.name} · {row.phone}</p> : null}
+                  <p className="text-sm text-muted">{row.contactEmail || row.email}</p>
+                </div>
+                <StatusPill status={row.status} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {row.status === "requested" ? (
+                  <button type="button" className={primaryBtn} disabled={busy} onClick={() => void run({ type: "reservation", id: row.id, status: "confirmed" })}>
+                    Confirm
+                  </button>
+                ) : null}
+                {row.status !== "cancelled" ? (
+                  <button type="button" className={ghostBtn} disabled={busy} onClick={() => void run({ type: "reservation", id: row.id, status: "cancelled" })}>
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function People({
+  board,
+  busy,
+  run,
+}: {
+  board: AdminBoard;
+  busy: boolean;
+  run: (data: AdminAct) => Promise<boolean>;
+}) {
+  return (
+    <ul className="space-y-3">
+      {board.people.map((person) => (
+        <li key={person.userId} className="flex gap-3 rounded-2xl border border-line bg-surface p-4">
+          <Avatar src={person.avatar} name={person.name} />
+          <div>
+          <h2 className="font-medium">{person.name}</h2>
+          <p className="break-all text-sm text-muted">{person.email}</p>
+          <p className="mt-1 text-xs text-muted">{person.role === "admin" ? "Admin" : "Member"} · {whenLabel(person.createdAt)}</p>
+          <button
+            type="button"
+            className={ghostBtn + " mt-3"}
+            disabled={busy}
+            onClick={() =>
+              void run({
+                type: "role",
+                userId: person.userId,
+                role: person.role === "admin" ? "member" : "admin",
+              })
+            }
+          >
+            {person.role === "admin" ? "Make member" : "Make admin"}
+          </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Desk({
+  board,
+  busy,
+  run,
+}: {
+  board: AdminBoard;
+  busy: boolean;
+  run: (data: AdminAct) => Promise<boolean>;
+}) {
+  const { user } = useCurrentUserState();
+  const threads = useMemo(() => {
+    const map = new Map<string, { userId: string; name: string; email: string; avatar: string; last: string; lastAt: string; waiting: boolean }>();
+    for (const message of board.messages) {
+      const person = board.people.find((item) => item.userId === message.userId);
+      map.set(message.userId, {
+        userId: message.userId,
+        name: person?.name ?? "Member",
+        email: person?.email ?? "",
+        avatar: person?.avatar ?? "",
+        last: message.body,
+        lastAt: message.createdAt,
+        waiting: message.senderId === message.userId,
+      });
+    }
+    return [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+  }, [board.messages, board.people]);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [body, setBody] = useState("");
+  const open = threads.find((thread) => thread.userId === openId) ?? null;
+  const messages = board.messages.filter((message) => message.userId === openId);
+
+  if (open) {
+    return (
+      <div className="space-y-3">
+        <button type="button" className="text-sm text-muted" onClick={() => setOpenId(null)}>
+          All threads
+        </button>
+        <div className="flex items-center gap-3">
+          <Avatar src={open.avatar} name={open.name} />
+          <div>
+            <h2 className="text-xl font-medium">{open.name}</h2>
+            <p className="break-all text-sm text-muted">{open.email}</p>
+          </div>
+        </div>
+        <ul className="space-y-3">
+          {messages.map((message) => {
+            const mine = message.senderId === user?.id;
+            return (
+              <li key={message.id} className={mine ? "flex justify-end" : "flex items-end gap-2"}>
+                {mine ? null : <Avatar src={message.senderAvatar || open.avatar} name={open.name} className="size-8" />}
+                <div className={mine ? "max-w-[85%] rounded-2xl bg-accent px-4 py-3 text-accent-fg" : "max-w-[85%] rounded-2xl border border-line bg-surface px-4 py-3"}>
+                  <p className="whitespace-pre-wrap">{message.body}</p>
+                  <p className="mt-2 text-xs opacity-70">{whenLabel(message.createdAt)}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <form
+          className="flex items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const text = body.trim();
+            if (!text) return;
+            void run({ type: "reply", userId: open.userId, body: text }).then((ok) => {
+              if (ok) setBody("");
+            });
+          }}
+        >
+          <textarea
+            value={body}
+            rows={2}
+            maxLength={2000}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="Private reply"
+            className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2"
+          />
+          <button type="submit" className={primaryBtn} disabled={busy || body.trim().length === 0}>
+            Send
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (threads.length === 0) {
+    return <p className="text-sm text-muted">No private threads yet. They appear when a member writes.</p>;
+  }
+
+  return (
+    <ul className="space-y-3">
+      {threads.map((thread) => (
+        <li key={thread.userId}>
+          <button type="button" onClick={() => setOpenId(thread.userId)} className="flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-left">
+            <Avatar src={thread.avatar} name={thread.name} />
+            <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-medium">{thread.name}</h2>
+              {thread.waiting ? <span className="size-2 rounded-full bg-accent" /> : null}
+            </div>
+            <p className="mt-1 line-clamp-2 text-sm text-muted">{thread.last}</p>
+            <p className="mt-2 text-xs text-muted">{whenLabel(thread.lastAt)}</p>
+            </div>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
