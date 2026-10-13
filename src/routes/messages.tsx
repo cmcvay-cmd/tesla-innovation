@@ -95,7 +95,7 @@ function MessagesPage() {
           <Avatar src={face.data?.avatar} name={face.data?.name || "Elon Musk"} />
           <div>
             <h1 className="text-4xl font-medium tracking-tight">Elon Musk</h1>
-            <p className="text-sm text-muted">Private line. Only you and admin.</p>
+            <p className="text-sm text-muted">.</p>
           </div>
         </div>
       </div>

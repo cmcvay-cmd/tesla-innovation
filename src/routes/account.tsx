@@ -53,7 +53,7 @@ function AccountPage() {
           <p className="kicker text-xs text-muted">ACCOUNT</p>
           <h1 className="mt-1 text-3xl font-medium tracking-tight">{profile?.name || "Your studio"}</h1>
           <p className="mt-1 text-sm text-muted">{profile?.email}</p>
-          <p className="mt-1 text-sm text-muted">{profile?.role === "admin" ? "Admin" : "Member"}</p>
+          <p className="mt-1 text-sm text-muted">{profile?.role === "admin" ? "Elon Musk" : "Member"}</p>
         </div>
       </div>
       <p className="text-sm text-muted">{photoBusy ? "Saving photo…" : "Tap the photo to upload a new one."}</p>
