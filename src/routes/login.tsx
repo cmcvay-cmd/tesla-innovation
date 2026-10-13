@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { createFileRoute, Navigate, useNavigate, useRouter } from "@tanstack/react-router";
-import { authClient, GROK_PROVIDERS, signIn } from "@/lib/auth/client";
+import { authClient } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { ensureProfile } from "@/lib/studio";
 import { Note, primaryBtn } from "@/components/bits";
@@ -147,19 +147,6 @@ function LoginPage() {
             {busy ? "Opening…" : mode === "up" ? "Create account" : "Sign in"}
           </button>
         </form>
-        <div className="mt-6 space-y-2">
-          <p className="text-xs text-muted">Or continue with</p>
-          {GROK_PROVIDERS.map((provider) => (
-            <button
-              key={provider.providerId}
-              type="button"
-              className="tap min-h-11 w-full rounded-full border border-line bg-surface text-sm"
-              onClick={() => void signIn(provider.providerId, { callbackURL: next || "/" })}
-            >
-              Continue with {provider.label}
-            </button>
-          ))}
-        </div>
       </div>
     </main>
   );

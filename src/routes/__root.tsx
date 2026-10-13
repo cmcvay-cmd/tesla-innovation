@@ -1,6 +1,5 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
-import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { StudioProvider } from "@/components/shell";
 import appCss from "../styles.css?url";
 
@@ -27,8 +26,6 @@ export const Route = createRootRoute({
         href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&display=swap",
       },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
     ],
   }),
   component: () => (
@@ -37,7 +34,6 @@ export const Route = createRootRoute({
         <HeadContent />
       </head>
       <body>
-        <PreviewHostBridge />
         <AuthProvider>
           <StudioProvider>
             <Outlet />
