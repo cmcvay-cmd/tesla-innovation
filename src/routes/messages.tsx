@@ -8,6 +8,7 @@ import { useLoad } from "@/components/use-load";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { whenLabel } from "@/lib/money";
 import { adminAct, adminBoard, myMessages, sendMessage, studioFace } from "@/lib/studio";
+import { notify } from "@/lib/notify";
 
 type Search = { about: string };
 
@@ -49,6 +50,18 @@ function MessagesPage() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [thread.data?.length]);
+
+  const prevCount = useRef(0);
+  useEffect(() => {
+    const count = thread.data?.length ?? 0;
+    if (prevCount.current > 0 && count > prevCount.current) {
+      const last = thread.data?.[thread.data.length - 1];
+      if (last && last.senderId !== user?.id) {
+        notify("New message", last.body?.slice(0, 80) || "Photo received");
+      }
+    }
+    prevCount.current = count;
+  }, [thread.data, user?.id]);
 
   async function onPhoto(file: File | undefined) {
     if (!file) return;

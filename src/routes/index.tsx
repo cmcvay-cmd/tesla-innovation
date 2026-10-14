@@ -20,12 +20,12 @@ function ShopPage() {
       {error ? <p className="mt-6 text-sm text-accent">{error}</p> : null}
       <ul className="mt-6 grid gap-4 md:grid-cols-2">
         {data?.map((vehicle) => (
-          <li key={vehicle.id} className="overflow-hidden rounded-2xl border border-line bg-surface">
+          <li key={vehicle.id} className="group overflow-hidden rounded-2xl border border-line bg-surface transition hover:border-fg/30">
             <Link
               to="/models/$modelId"
               params={{ modelId: vehicle.id }}
               search={{ intent: "" }}
-              className="block"
+              className="block active:scale-[0.99]"
             >
               <img src={vehicle.image} alt="" className="aspect-video w-full object-cover" />
               <div className="space-y-3 p-4">

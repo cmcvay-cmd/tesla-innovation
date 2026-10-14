@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Guard, Note, primaryBtn, ghostBtn, Skeleton, StatusPill, Avatar } from "@/components/bits";
+import { Guard, Note, primaryBtn, ghostBtn, accentBtn, Skeleton, StatusPill, Avatar } from "@/components/bits";
 import { useStudio } from "@/components/shell";
 import { useLoad } from "@/components/use-load";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { usd, whenLabel } from "@/lib/money";
+import { usd, projectCents, whenLabel } from "@/lib/money";
 import { adminAct, adminBoard, type AdminAct, type AdminBoard } from "@/lib/studio";
+import { notify, requestNotifyPermission, playCoolSound } from "@/lib/notify";
 
 export const Route = createFileRoute("/admin")({
   component: () => (
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/admin")({
 const TABS = [
   ["lineup", "Lineup"],
   ["plans", "Plans"],
+  ["returns", "Returns"],
   ["book", "Book"],
   ["people", "People"],
   ["desk", "Desk"],
@@ -63,8 +65,16 @@ function AdminPage() {
         <p className="kicker text-xs text-muted">FULL CONTROL</p>
         <h1 className="mt-2 text-4xl font-medium tracking-tight">Studio desk</h1>
         <p className="mt-2 text-sm text-muted">
-          Anchors, plans, orders, people, and private replies.
+          Anchors, plans, live returns, orders, people, and private replies.
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" className={ghostBtn} onClick={() => void requestNotifyPermission()}>
+            Enable alerts
+          </button>
+          <button type="button" className={ghostBtn} onClick={() => playCoolSound()}>
+            Test sound
+          </button>
+        </div>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {TABS.map(([id, label]) => (
@@ -87,6 +97,7 @@ function AdminPage() {
       {error ? <Note>{error}</Note> : null}
       {board.data && tab === "lineup" ? <Lineup board={board.data} busy={busy} run={run} /> : null}
       {board.data && tab === "plans" ? <Plans board={board.data} busy={busy} run={run} /> : null}
+      {board.data && tab === "returns" ? <Returns board={board.data} busy={busy} run={run} /> : null}
       {board.data && tab === "book" ? <Book board={board.data} busy={busy} run={run} /> : null}
       {board.data && tab === "people" ? <People board={board.data} busy={busy} run={run} /> : null}
       {board.data && tab === "desk" ? <Desk board={board.data} busy={busy} run={run} /> : null}
@@ -233,6 +244,143 @@ function Plans({
         </li>
       ))}
     </ul>
+  );
+}
+
+function Returns({
+  board,
+  busy,
+  run,
+}: {
+  board: AdminBoard;
+  busy: boolean;
+  run: (data: AdminAct) => Promise<boolean>;
+}) {
+  const [planId, setPlanId] = useState(board.plans[0]?.id ?? "");
+  const plan = board.plans.find((p) => p.id === planId) ?? board.plans[0];
+  const [apr, setApr] = useState(plan ? (plan.aprBps / 100).toFixed(1) : "8.0");
+  const [sample, setSample] = useState("10000");
+  const [note, setNote] = useState<string | null>(null);
+
+  const aprNum = Number(apr);
+  const aprBps = Number.isFinite(aprNum) ? Math.round(aprNum * 100) : 0;
+  const amount = Number(sample);
+  const amountCents = Number.isInteger(amount) ? amount * 100 : 0;
+  const preview = plan && amountCents > 0 ? projectCents(amountCents, aprBps, plan.horizonMonths) : 0;
+  const gain = preview - amountCents;
+
+  async function broadcast() {
+    if (!plan) return;
+    const ok = await run({
+      type: "plan",
+      id: plan.id,
+      name: plan.name,
+      horizonMonths: plan.horizonMonths,
+      minCents: plan.minCents,
+      aprBps,
+      risk: plan.risk,
+      summary: plan.summary,
+      active: plan.active,
+      sortOrder: plan.sortOrder,
+    });
+    if (ok) {
+      setNote(`Broadcast live — ${plan.name} now at ${aprNum.toFixed(1)}%`);
+      notify("Returns updated", `${plan.name} is now ${aprNum.toFixed(1)}% APR`);
+    }
+  }
+
+  if (!plan) return <p className="text-sm text-muted">No plans yet.</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-line bg-surface p-5">
+        <p className="kicker text-xs text-muted">LIVE RETURNS</p>
+        <h2 className="mt-1 text-2xl font-medium">Preview before you broadcast</h2>
+        <p className="mt-1 text-sm text-muted">
+          Set an APR. See the return. Then push it live so members see the new number.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" className={ghostBtn} onClick={() => void requestNotifyPermission().then(() => playCoolSound())}>
+            Enable alerts
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-sm">
+          <span className="text-muted">Plan</span>
+          <select
+            value={plan.id}
+            onChange={(e) => {
+              const next = board.plans.find((p) => p.id === e.target.value);
+              setPlanId(e.target.value);
+              if (next) setApr((next.aprBps / 100).toFixed(1));
+            }}
+            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface-2 px-3"
+          >
+            {board.plans.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {(p.aprBps / 100).toFixed(1)}% · {p.horizonMonths} mo
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="text-muted">New APR %</span>
+          <input
+            type="number"
+            step="0.1"
+            value={apr}
+            onChange={(e) => setApr(e.target.value)}
+            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
+          />
+        </label>
+        <label className="block text-sm sm:col-span-2">
+          <span className="text-muted">Sample amount ($)</span>
+          <input
+            type="number"
+            value={sample}
+            onChange={(e) => setSample(e.target.value)}
+            className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface-2 px-3 tabular-nums"
+          />
+        </label>
+      </div>
+
+      <div className="rounded-2xl border border-accent/40 bg-surface p-5">
+        <p className="text-xs text-muted">Projected at horizon</p>
+        <p className="mt-1 text-4xl font-medium tabular-nums">{usd(preview)}</p>
+        <p className="mt-1 text-sm text-muted">
+          From {usd(amountCents)} · gain {usd(gain)} · {plan.horizonMonths} months
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" className={accentBtn} disabled={busy || !Number.isFinite(aprNum)} onClick={() => void broadcast()}>
+            Broadcast live APR
+          </button>
+          <button type="button" className={ghostBtn} onClick={() => playCoolSound()}>
+            Test sound
+          </button>
+        </div>
+        {note ? <Note>{note}</Note> : null}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[5000, 10000, 25000].map((dollars) => {
+          const cents = dollars * 100;
+          const back = projectCents(cents, aprBps, plan.horizonMonths);
+          return (
+            <button
+              key={dollars}
+              type="button"
+              onClick={() => setSample(String(dollars))}
+              className="rounded-2xl border border-line bg-surface p-4 text-left transition hover:border-fg/40 active:scale-[0.99]"
+            >
+              <p className="text-xs text-muted">${dollars.toLocaleString()}</p>
+              <p className="mt-1 text-xl font-medium tabular-nums">{usd(back)}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
