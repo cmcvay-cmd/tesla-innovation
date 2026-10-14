@@ -155,6 +155,15 @@ function Header({ path }: { path: string }) {
                 {item.label}
               </Link>
             ))}
+            {profile?.role === "admin" ? (
+              <Link
+                to="/admin"
+                aria-current={path.startsWith("/admin") ? "page" : undefined}
+                className={path.startsWith("/admin") ? "inline-flex items-center gap-1 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg" : "inline-flex items-center gap-1 rounded-full border border-accent/50 px-3 py-1.5 text-xs font-medium text-accent"}
+              >
+                Studio Desk
+              </Link>
+            ) : null}
           </nav>
           {isPending ? (
             <span className="h-8 w-16 animate-pulse rounded-full bg-surface" />
@@ -200,6 +209,18 @@ function Dock({ path }: { path: string }) {
             </li>
           );
         })}
+        {profile?.role === "admin" ? (
+          <li className="flex-1">
+            <Link
+              to="/admin"
+              aria-current={path.startsWith("/admin") ? "page" : undefined}
+              className="relative flex min-h-16 flex-col items-center justify-center gap-1 px-1 text-[11px] active:opacity-70"
+            >
+              <span className={path.startsWith("/admin") ? "size-5 rounded-full bg-accent" : "size-5 rounded-full border border-accent"} />
+              <span className={path.startsWith("/admin") ? "text-accent" : "text-muted"}>Desk</span>
+            </Link>
+          </li>
+        ) : null}
       </ul>
     </nav>
   );
