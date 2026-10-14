@@ -856,8 +856,8 @@ function parseAct(input: AdminAct): AdminAct {
     if (!Number.isInteger(input.minCents) || input.minCents < 10_000 || input.minCents > 100_000_000) {
       throw new Error("Minimum is out of range");
     }
-    if (!Number.isInteger(input.aprBps) || input.aprBps < 0 || input.aprBps > 5000) {
-      throw new Error("Pace must be between 0 and 50 percent");
+    if (!Number.isInteger(input.aprBps) || input.aprBps < 0 || input.aprBps > 50000) {
+      throw new Error("Pace must be between 0 and 500 percent");
     }
     if (!Number.isInteger(input.horizonMonths) || input.horizonMonths < 1 || input.horizonMonths > 120) {
       throw new Error("Horizon out of range");
