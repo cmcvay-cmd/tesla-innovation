@@ -514,11 +514,15 @@ export const investModel = createServerFn({ method: "POST" })
     `;
     const model = models[0];
     if (!model || model.status === "closed") throw new Error("That vehicle is closed");
+    const planRows = await sql<{ aprBps: number }>`
+      select apr_bps as "aprBps" from plans where active = true order by apr_bps desc limit 1
+    `;
+    const liveApr = planRows[0] ? num(planRows[0].aprBps) : tier.aprBps;
     await sql`
       insert into model_stakes (user_id, model_id, amount_cents, apr_bps, horizon_months)
-      values (${context.userId}, ${data.modelId}, ${tier.amountCents}, ${tier.aprBps}, ${tier.horizonMonths})
+      values (${context.userId}, ${data.modelId}, ${tier.amountCents}, ${liveApr}, ${tier.horizonMonths})
     `;
-    const back = projectCents(tier.amountCents, tier.aprBps, tier.horizonMonths);
+    const back = projectCents(tier.amountCents, liveApr, tier.horizonMonths);
     await sql`
       insert into messages (user_id, sender_id, body)
       values (
@@ -529,7 +533,7 @@ export const investModel = createServerFn({ method: "POST" })
           `Sleeve: ${tier.name}`,
           `Amount: ${usd(tier.amountCents)}`,
           `Horizon: ${tier.horizonMonths} months`,
-          `Pace: ${(tier.aprBps / 100).toFixed(1)}%`,
+          `Pace: ${(liveApr / 100).toFixed(1)}%`,
           `Return: ${usd(back - tier.amountCents)}`,
           `At maturity: ${usd(back)}`,
         ].join("\n")}

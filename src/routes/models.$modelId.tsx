@@ -8,7 +8,7 @@ import { useLoad } from "@/components/use-load";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { monthlyPayment, projectCents, usd } from "@/lib/money";
 import { FINANCE_APR_BPS, FINANCE_TERMS, INVEST_TIERS, type InvestTier } from "@/lib/offers";
-import { PAINTS, getVehicle, investModel, shopVehicle } from "@/lib/studio";
+import { PAINTS, getVehicle, investModel, listPlans, shopVehicle } from "@/lib/studio";
 
 type ModelSearch = { intent: "shop" | "invest" | "" };
 type PayMethod = "cash" | "finance";
@@ -316,7 +316,12 @@ function InvestForm({ modelId, modelName }: { modelId: string; modelName: string
   const [tierId, setTierId] = useState<string>(INVEST_TIERS[2].id);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const plans = useLoad(listPlans, "plans");
   const selected = INVEST_TIERS.find((tier) => tier.id === tierId) ?? INVEST_TIERS[0];
+  const liveApr =
+    plans.data && plans.data.length > 0
+      ? Math.max(...plans.data.filter((p) => p.active).map((p) => p.aprBps))
+      : selected.aprBps;
 
   async function submit() {
     if (!user) {
@@ -342,12 +347,17 @@ function InvestForm({ modelId, modelName }: { modelId: string; modelName: string
     <section className="space-y-4 rounded-2xl border border-line bg-surface p-4">
       <div>
         <h2 className="text-lg font-medium">Invest in {modelName}</h2>
-        <p className="mt-1 text-sm text-muted">Pick an amount. The return is shown before chat opens with admin.</p>
+        <p className="mt-1 text-sm text-muted">Pick an amount. The return uses the live plan pace.</p>
       </div>
       <ul className="space-y-2">
         {INVEST_TIERS.map((tier) => (
           <li key={tier.id}>
-            <TierButton tier={tier} selected={tier.id === selected.id} onSelect={() => setTierId(tier.id)} />
+            <TierButton
+              tier={tier}
+              aprBps={liveApr}
+              selected={tier.id === selected.id}
+              onSelect={() => setTierId(tier.id)}
+            />
           </li>
         ))}
       </ul>
@@ -361,14 +371,16 @@ function InvestForm({ modelId, modelName }: { modelId: string; modelName: string
 
 function TierButton({
   tier,
+  aprBps,
   selected,
   onSelect,
 }: {
   tier: InvestTier;
+  aprBps: number;
   selected: boolean;
   onSelect: () => void;
 }) {
-  const back = projectCents(tier.amountCents, tier.aprBps, tier.horizonMonths);
+  const back = projectCents(tier.amountCents, aprBps, tier.horizonMonths);
   return (
     <button
       type="button"
@@ -384,7 +396,7 @@ function TierButton({
           <p className="text-xs text-muted">{tier.name}</p>
           <p className="text-xl font-medium tabular-nums">{usd(tier.amountCents)}</p>
         </div>
-        <p className="tabular-nums">{(tier.aprBps / 100).toFixed(1)}%</p>
+        <p className="tabular-nums">{(aprBps / 100).toFixed(1)}%</p>
       </div>
       <p className="mt-2 text-sm text-muted">
         {tier.horizonMonths} months · return {usd(back - tier.amountCents)}
