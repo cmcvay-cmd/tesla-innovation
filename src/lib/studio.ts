@@ -83,6 +83,7 @@ export type ChatMessage = {
   body: string;
   image: string | null;
   createdAt: string;
+  seenAt: string | null;
   senderAvatar: string;
 };
 
@@ -994,6 +995,7 @@ async function messageQuery(sql: Sql, userId: string) {
     select m.id, m.user_id as "userId", m.sender_id as "senderId", m.body,
            m.image,
            to_char(m.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
+           to_char(m.seen_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "seenAt",
            coalesce(p.avatar, '') as "senderAvatar"
     from messages m
     left join profiles p on p.user_id = m.sender_id
@@ -1006,7 +1008,62 @@ async function messageQuery(sql: Sql, userId: string) {
       ...row,
       id: num(row.id),
       image: row.image || null,
+      seenAt: row.seenAt || null,
       senderAvatar: row.senderAvatar ?? "",
     }))
     .reverse();
 }
+
+export const markSeen = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { threadUserId: string }) => {
+    if (!input || typeof input.threadUserId !== "string") throw new Error("Missing thread");
+    return input;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await db();
+    await sql`
+      update messages set seen_at = now()
+      where user_id = ${data.threadUserId}
+        and sender_id <> ${context.userId}
+        and seen_at is null
+    `;
+    return { ok: true };
+  });
+
+export const setTyping = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { threadUserId: string; typing: boolean }) => {
+    if (!input || typeof input.threadUserId !== "string") throw new Error("Missing thread");
+    return input;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await db();
+    if (data.typing) {
+      await sql`
+        insert into typing (user_id, thread_user_id, updated_at)
+        values (${context.userId}, ${data.threadUserId}, now())
+        on conflict (user_id) do update set thread_user_id = ${data.threadUserId}, updated_at = now()
+      `;
+    } else {
+      await sql`delete from typing where user_id = ${context.userId}`;
+    }
+    return { ok: true };
+  });
+
+export const getTyping = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((threadUserId: string) => {
+    if (typeof threadUserId !== "string") throw new Error("Missing thread");
+    return threadUserId;
+  })
+  .handler(async ({ context, data: threadUserId }) => {
+    const sql = await db();
+    const rows = await sql<{ userId: string }>`
+      select user_id as "userId" from typing
+      where thread_user_id = ${threadUserId}
+        and user_id <> ${context.userId}
+        and updated_at > now() - interval '4 seconds'
+    `;
+    return { typing: rows.length > 0 };
+  });

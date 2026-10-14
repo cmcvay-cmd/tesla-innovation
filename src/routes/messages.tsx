@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus, X, Download } from "lucide-react";
 import { Avatar, Guard, Note, primaryBtn } from "@/components/bits";
 import { prepareChatImage } from "@/lib/chat-image";
 import { useStudio } from "@/components/shell";
 import { useLoad } from "@/components/use-load";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { whenLabel } from "@/lib/money";
-import { adminAct, adminBoard, myMessages, sendMessage, studioFace } from "@/lib/studio";
+import { adminAct, adminBoard, getTyping, markSeen, myMessages, sendMessage, setTyping, studioFace } from "@/lib/studio";
 import { notify } from "@/lib/notify";
 
 type Search = { about: string };
@@ -35,7 +35,10 @@ function MessagesPage() {
   const [seeded, setSeeded] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [viewer, setViewer] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typing = useLoad(() => getTyping({ data: user?.id ?? "" }), "typing", 2000);
 
   useEffect(() => {
     if (seeded || !about) return;
@@ -62,6 +65,36 @@ function MessagesPage() {
     }
     prevCount.current = count;
   }, [thread.data, user?.id]);
+
+  useEffect(() => {
+    if (!user || !thread.data) return;
+    void markSeen({ data: { threadUserId: user.id } });
+  }, [thread.data, user]);
+
+  function onType(text: string) {
+    setBody(text);
+    if (!user) return;
+    void setTyping({ data: { threadUserId: user.id, typing: true } });
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => {
+      void setTyping({ data: { threadUserId: user.id, typing: false } });
+    }, 1500);
+  }
+
+  async function saveImage(src: string) {
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `photo-${Date.now()}.jpg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(src, "_blank");
+    }
+  }
 
   async function onPhoto(file: File | undefined) {
     if (!file) return;
@@ -132,24 +165,43 @@ function MessagesPage() {
               >
                 <p className="text-xs opacity-70">{mine ? "You" : "Elon Musk"}</p>
                 {message.image ? (
-                  <img
-                    src={message.image}
-                    alt=""
-                    className="mt-2 max-h-64 max-w-full rounded-lg object-contain"
-                  />
+                  <button type="button" onClick={() => setViewer(message.image)} className="mt-2 block">
+                    <img
+                      src={message.image}
+                      alt=""
+                      className="max-h-64 max-w-full rounded-lg object-contain"
+                    />
+                  </button>
                 ) : null}
                 {message.body && message.body !== "(image)" ? (
                   <p className="mt-1 whitespace-pre-wrap leading-relaxed">{message.body}</p>
                 ) : null}
-                <p className="mt-2 text-xs opacity-70">{whenLabel(message.createdAt)}</p>
+                <p className="mt-2 text-xs opacity-70">
+                  {whenLabel(message.createdAt)}
+                  {mine && message.seenAt ? " · Seen" : ""}
+                </p>
               </div>
             </li>
           );
         })}
       </ul>
+      {typing.data?.typing ? <p className="text-sm text-muted">Typing…</p> : null}
       <div ref={endRef} />
       {note ? <Note>{note}</Note> : null}
       {thread.error ? <Note>{thread.error}</Note> : null}
+      {viewer ? (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/90" onClick={() => setViewer(null)}>
+          <div className="flex items-center justify-between p-4">
+            <button type="button" className="text-white" onClick={() => setViewer(null)}>Close</button>
+            <button type="button" className="flex items-center gap-2 text-white" onClick={(e) => { e.stopPropagation(); void saveImage(viewer); }}>
+              <Download className="size-4" /> Save
+            </button>
+          </div>
+          <div className="flex flex-1 items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+            <img src={viewer} alt="" className="max-h-full max-w-full object-contain" />
+          </div>
+        </div>
+      ) : null}
       <form
         className="composer fixed inset-x-0 z-30 border-t border-line bg-bg px-4 py-3"
         onSubmit={(event) => {
@@ -196,7 +248,7 @@ function MessagesPage() {
               value={body}
               rows={2}
               maxLength={2000}
-              onChange={(event) => setBody(event.target.value)}
+              onChange={(event) => onType(event.target.value)}
               placeholder="Message the studio"
               className="min-h-11 flex-1 resize-none rounded-xl border border-line bg-surface-2 px-3 py-2 text-base"
             />
